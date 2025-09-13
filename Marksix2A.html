@@ -1,0 +1,472 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Date Difference Grid with 5-Year History</title>
+  <style>
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    th,
+    td {
+      border: 1px solid black;
+      padding: 8px;
+      text-align: center;
+    }
+
+    textarea {
+      width: 250px;
+      height: 60px;
+      margin-bottom: 10px;
+    }
+
+    button {
+      margin-top: 10px;
+    }
+
+    .highlight {
+      background-color: yellow;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Enter Dates (yyyy-mm-dd), separated by commas:</h2>
+  <textarea id="inputDate" placeholder="yyyy-mm-dd,yyyy-mm-dd"></textarea><br>
+  <input type="file" id="csvFile" accept=".csv">
+  <button onclick="loadCSV()">Load CSV</button>
+  <button onclick="calculateDateDifferences()">Calculate</button>
+
+  <div id="resultContainer"></div>
+  <div id="commonValuesContainer"></div>
+
+
+<button id="exportBtn">Export Access Data</button>
+<input type="file" id="importFile" />
+<label><input type="checkbox" id="showTable"> Show Data Table</label>
+<div id="tableContainer"></div>
+
+
+<script>
+
+'use strict'; //do you mean add strict here
+(function() {
+  // ======= VARIABLES TRACKING =======
+  const legacyAccessCounts = {};
+  const sensitiveVars = { sessionToken: "ABC123_ENCRYPTED", userData: { name: "Alice", role: "admin" } };
+  const sensitiveAccessCounts = {};
+  let initialized = false;
+
+  // ======= HELPER TO CREATE PROXY =======
+  function createProxy(obj, accessCounts, name) {
+    return new Proxy(obj, {
+      get(target, prop) {
+        accessCounts[prop] = accessCounts[prop] || { reads: 0, writes: 0, readLimit: 10000, writeLimit: 10000 };
+        accessCounts[prop].reads++;
+        if (initialized && accessCounts[prop].reads > accessCounts[prop].readLimit) {
+          console.warn(`[READ LIMIT EXCEEDED] ${name}.${prop}`);
+        }
+        return target[prop];
+      },
+      set(target, prop, value) {
+        accessCounts[prop] = accessCounts[prop] || { reads: 0, writes: 0, readLimit: 10000, writeLimit: 10000 };
+        accessCounts[prop].writes++;
+        if (initialized && accessCounts[prop].writes > accessCounts[prop].writeLimit) {
+          console.warn(`[WRITE LIMIT EXCEEDED] ${name}.${prop}`);
+          return true; // ignore write
+        }
+        target[prop] = value;
+        return true;
+      }
+    });
+  }
+
+  // ======= WRAP GLOBALS =======
+  window.legacyGlobal = createProxy(window, legacyAccessCounts, 'legacyGlobal');
+  window.secureSession = createProxy(sensitiveVars, sensitiveAccessCounts, 'secureSession');
+
+  // ======= EXPORT FUNCTION =======
+  function exportXML() {
+    const data = { legacyAccessCounts, sensitiveAccessCounts };
+    const xml = `<root>${Object.keys(data).map(k => `<${k}>` + 
+      Object.keys(data[k]).map(v => `<var name="${v}" reads="${data[k][v].reads}" writes="${data[k][v].writes}" readLimit="${data[k][v].readLimit}" writeLimit="${data[k][v].writeLimit}" />`).join('') +
+    `</${k}>`).join('')}</root>`;
+    
+    // Simple encryption using btoa (Base64)
+    const encrypted = btoa(xml);
+    const blob = new Blob([encrypted], {type: 'text/plain'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'variable_access.xml';
+    link.click();
+  }
+
+  // ======= IMPORT FUNCTION =======
+  function importXML(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const encrypted = e.target.result;
+      const xml = atob(encrypted); // decrypt
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, "application/xml");
+
+      // Parse legacy variables
+      doc.querySelectorAll('legacyAccessCounts > var').forEach(v => {
+        const name = v.getAttribute('name');
+        legacyAccessCounts[name] = {
+          reads: parseInt(v.getAttribute('reads')),
+          writes: parseInt(v.getAttribute('writes')),
+          readLimit: parseInt(v.getAttribute('readLimit')),
+          writeLimit: parseInt(v.getAttribute('writeLimit'))
+        };
+      });
+
+      // Parse sensitive variables
+      doc.querySelectorAll('sensitiveAccessCounts > var').forEach(v => {
+        const name = v.getAttribute('name');
+        sensitiveAccessCounts[name] = {
+          reads: parseInt(v.getAttribute('reads')),
+          writes: parseInt(v.getAttribute('writes')),
+          readLimit: parseInt(v.getAttribute('readLimit')),
+          writeLimit: parseInt(v.getAttribute('writeLimit'))
+        };
+      });
+
+      if(document.getElementById('showTable').checked){
+        renderTable();
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ======= RENDER TABLE =======
+  function renderTable() {
+    const container = document.getElementById('tableContainer');
+    container.innerHTML = '';
+
+    function renderSet(title, counts){
+      let html = `<h3>${title}</h3><table border="1"><tr><th>Variable</th><th>Reads</th><th>Read Limit</th><th>Writes</th><th>Write Limit</th></tr>`;
+      for(let v in counts){
+        const c = counts[v];
+        html += `<tr><td>${v}</td><td>${c.reads}</td><td>${c.readLimit}</td><td>${c.writes}</td><td>${c.writeLimit}</td></tr>`;
+      }
+      html += '</table>';
+      container.innerHTML += html;
+    }
+
+    renderSet('Legacy Globals', legacyAccessCounts);
+    renderSet('Sensitive Vars', sensitiveAccessCounts);
+  }
+
+  // ======= BUTTON EVENTS =======
+  document.getElementById('exportBtn').onclick = exportXML;
+  document.getElementById('importFile').onchange = function(e){
+    if(e.target.files.length > 0){
+      importXML(e.target.files[0]);
+    }
+  };
+  document.getElementById('showTable').onchange = function(){ renderTable(); }
+
+  // ======= FIRST TIME INITIALIZATION =======
+  // Set initial limits based on first run
+  setTimeout(()=>{
+    for(let v in legacyAccessCounts){
+      legacyAccessCounts[v].readLimit = legacyAccessCounts[v].reads;
+      legacyAccessCounts[v].writeLimit = legacyAccessCounts[v].writes;
+    }
+    for(let v in sensitiveAccessCounts){
+      sensitiveAccessCounts[v].readLimit = sensitiveAccessCounts[v].reads;
+      sensitiveAccessCounts[v].writeLimit = sensitiveAccessCounts[v].writes;
+    }
+    initialized = true;
+  }, 1000);
+
+})();
+
+
+    let csvData = [];
+
+    function loadCSV() {
+      const fileInput = document.getElementById('csvFile');
+      const file = fileInput.files[0];
+      if (!file) {
+        alert("Please select a CSV file.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        const text = e.target.result;
+        const rows = text.trim().split('\n').map(r => r.split(','));
+        const headers = rows.shift();
+        csvData = rows.map(row => {
+          const obj = {};
+          headers.forEach((header, i) => {
+            obj[header.trim()] = row[i];
+          });
+          return obj;
+        });
+        alert("CSV loaded successfully.");
+      };
+      reader.readAsText(file);
+    }
+
+    function calculateDateDifferences() {
+      const inputDateStr = document.getElementById("inputDate").value.trim();
+      const dateStrings = inputDateStr.split(',');
+
+      const resultContainer = document.getElementById("resultContainer");
+      resultContainer.innerHTML = "";
+      const commonValuesContainer = document.getElementById("commonValuesContainer");
+      commonValuesContainer.innerHTML = "";
+
+      let allBaseValues = [];
+
+      dateStrings.forEach(dateStr => {
+        const inputDate = new Date(dateStr.trim());
+
+        if (isNaN(inputDate) || !dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          alert("Invalid date: " + dateStr);
+          return;
+        }
+
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        var today = new Date();
+        today = getNextDay(today, 7);
+        const daysToAdd = [2, 4, 6];
+
+        const dateDifferences = [];
+
+        daysToAdd.forEach(offset => {
+          const nextDate = getNextDay(today, offset);
+          const dayDifference = Math.floor((nextDate - inputDate) / (1000 * 60 * 60 * 24));
+          const bases = [];
+          for (let base = 3; base <= 12; base++) {
+            bases.push(dayDifference.toString(base).slice(-2));
+          }
+          dateDifferences.push({ day: daysOfWeek[nextDate.getDay()], difference: dayDifference, bases: bases });
+        });
+
+        populateTable(dateDifferences, dateStr.trim());
+        allBaseValues.push(dateDifferences);
+      });
+
+      displayCommonValues(allBaseValues);
+    }
+
+    function getNextDay(currentDate, dayOffset) {
+      const date = new Date(currentDate);
+      date.setDate(date.getDate() + ((dayOffset - date.getDay() + 7) % 7));
+      return date;
+    }
+
+    function populateTable(data, dateStr) {
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <thead>
+          <tr><th colspan="13">Date: ${dateStr}</th></tr>
+          <tr>
+            <th>Day</th><th>Diff (Days)</th>
+            <th class="highlight">Base 3</th><th class="highlight">Base 4</th><th class="highlight">Base 5</th><th class="highlight">Base 6</th>
+            <th>Base 7</th><th>Base 8</th><th>Base 9</th><th>Base 10</th><th class="highlight">Base 11</th><th class="highlight">Base 12</th>
+            <th>Matching Records</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+
+      const tbody = table.querySelector('tbody');
+
+      data.forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.day}</td>
+          <td>${row.difference}</td>
+          ${row.bases.map((v, i) => `<td class="${[0,1,2,3,8,9].includes(i)?'highlight':''}">${v}</td>`).join('')}
+          <td></td>
+        `;
+        tbody.appendChild(tr);
+        findMatchingRecords(dateStr, row.bases[0], row.bases[1], tbody);
+      });
+
+      document.getElementById("resultContainer").appendChild(table);
+      highlightRemainingDays(dateStr);
+    }
+
+    function findMatchingRecords(dateStr, base3, base4, tbody) {
+      const startDate = new Date();
+      startDate.setFullYear(startDate.getFullYear() - 2);
+      const endDate = new Date();
+      const inputDate = new Date(dateStr);
+
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dow = d.getDay();
+        if (dow === 2 || dow === 4 || dow === 6) {
+          const diff = Math.floor((d - inputDate) / (1000 * 60 * 60 * 24));
+          const bases = [];
+          for (let base = 3; base <= 12; base++) {
+            bases.push(diff.toString(base).slice(-2));
+          }
+          if (bases[0] === base3 && bases[1] === base4) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>Matched</td><td>${d.toISOString().split('T')[0]}</td>
+              ${bases.map(b => `<td>${b}</td>`).join('')}
+              <td></td>
+            `;
+            tbody.appendChild(tr);
+
+            csvData.forEach(row => {
+              if (row.Date === d.toISOString().split('T')[0]) {
+                const csvTr = document.createElement("tr");
+                csvTr.innerHTML = `
+                  <td>CSV</td><td>${row.Date}</td>
+                  <td>${row["Winning Number 1"]}</td><td>${row["2"]}</td><td>${row["3"]}</td>
+                  <td>${row["4"]}</td><td>${row["5"]}</td><td>${row["6"]}</td><td>${row["Extra Number"]}</td>
+                  <td colspan="5"></td>
+                `;
+                tbody.appendChild(csvTr);
+              }
+            });
+          }
+        }
+      }
+
+      // New: future matches after CSV
+      const futureLimitDays = 730;  // up to 2 years into future
+      const futureStartDate = new Date();
+      for (let i = 1; i <= futureLimitDays; i++) {
+        const d = new Date();
+        d.setDate(futureStartDate.getDate() + i);
+        const dow = d.getDay();
+        if (dow === 2 || dow === 4 || dow === 6) {
+          const diff = Math.floor((d - inputDate) / (1000 * 60 * 60 * 24));
+          const bases = [];
+          for (let base = 3; base <= 12; base++) {
+            bases.push(diff.toString(base).slice(-2));
+          }
+          if (bases[0] === base3 && bases[1] === base4) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>Future</td><td>${d.toISOString().split('T')[0]}</td>
+              ${bases.map(b => `<td>${b}</td>`).join('')}
+              <td></td>
+            `;
+            tbody.appendChild(tr);
+          }
+        }
+      }
+    }
+
+    function getRemainingDays(dateString) {
+      const inputDate = new Date(dateString);
+      const year = inputDate.getFullYear();
+      const month = inputDate.getMonth();
+      const day = inputDate.getDate();
+      const firstDay = new Date(year, month, 1);
+      const firstWeekday = firstDay.getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const calendar = [];
+      let week = [];
+      let dateCounter = 1;
+
+      for (let i = 0; i < firstWeekday; i++) {
+        week.push(null);
+      }
+      while (dateCounter <= daysInMonth) {
+        week.push(dateCounter);
+        if (week.length === 7) {
+          calendar.push(week);
+          week = [];
+        }
+        dateCounter++;
+      }
+      if (week.length > 0) {
+        while (week.length < 7) week.push(null);
+        calendar.push(week);
+      }
+
+      let rowIndex = -1, colIndex = -1;
+      for (let r = 0; r < calendar.length; r++) {
+        for (let c = 0; c < 7; c++) {
+          if (calendar[r][c] === day) {
+            rowIndex = r;
+            colIndex = c;
+            break;
+          }
+        }
+        if (rowIndex !== -1) break;
+      }
+
+      if (rowIndex === -1) return [];
+
+      const excludeSet = new Set();
+      excludeSet.add(day);
+      for (let c = colIndex + 1; c < 7; c++) {
+        if (calendar[rowIndex][c] !== null) {
+          excludeSet.add(calendar[rowIndex][c]);
+        }
+      }
+      for (let r = rowIndex + 1; r < calendar.length; r++) {
+        if (calendar[r][colIndex] !== null) {
+          excludeSet.add(calendar[r][colIndex]);
+        }
+      }
+
+      const result = [];
+      for (let d = 1; d <= daysInMonth; d++) {
+        if (!excludeSet.has(d)) {
+          result.push(d);
+        }
+      }
+      return result;
+    }
+
+    function highlightRemainingDays(dateStr) {
+      const remainingDays = getRemainingDays(dateStr);
+      const tables = document.querySelectorAll(`#resultContainer table`);
+      tables.forEach(table => {
+        const header = table.querySelector("thead th");
+        if (header && header.textContent.includes(dateStr)) {
+          const cells = table.querySelectorAll("tbody td");
+          cells.forEach(cell => {
+            const cellValue = parseInt(cell.textContent, 10);
+            if (remainingDays.includes(cellValue)) {
+              cell.style.backgroundColor = "#c8f7c5";
+            }
+          });
+        }
+      });
+    }
+
+    function displayCommonValues(allBaseValues) {
+      const commonTable = document.createElement('table');
+      commonTable.innerHTML = `<thead><tr><th>Day</th><th>Common Base 3 Values</th></tr></thead><tbody></tbody>`;
+      const tbody = commonTable.querySelector('tbody');
+
+      ["Tuesday", "Thursday", "Saturday"].forEach(day => {
+        const base3Values = allBaseValues.map(g => {
+          const match = g.find(r => r.day === day);
+          return match ? match.bases[0] : null;
+        }).filter(v => v !== null);
+
+        const counts = base3Values.reduce((a, c) => (a[c] = (a[c] || 0) + 1, a), {});
+        const commons = Object.entries(counts).filter(([k, v]) => v > 1).map(([k]) => k);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${day}</td><td>${commons.length ? commons.join(', ') : 'None'}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById("commonValuesContainer").appendChild(commonTable);
+    }
+  </script>
+
+</body>
+
+</html>
