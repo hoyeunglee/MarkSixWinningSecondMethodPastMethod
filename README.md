@@ -6,6 +6,7 @@ Bank number is at Base 4 of date difference when input YYYY-MM-DD and when only 
 
 For example, today is Tuesday, the input date is next Tuesday date, add 7 days, sometimes, base 5 and base 6, sometimes, base 10 and base 9
 if next Tuesday not worked, then it will move to Next Thursday and next round.
+Reference date usually have some, but may be changed. I am using year 1994 and also 2000-01-01, 2003-01-01, 1990-01-01. 
 
 when matched base 3 and base 4, it will search past records that matched base 3 and base 4, if found it, choose the second and fifth ball numbers of the recent matched.
 
