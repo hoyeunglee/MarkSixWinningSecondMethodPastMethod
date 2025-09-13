@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mark Six Pyramid Groups (Graph Clustering)</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; }
+table { border-collapse: collapse; margin-bottom: 20px; width:100%; }
+th, td { border:1px solid #999; padding:6px; text-align:center; }
+th { background:#f2f2f2; }
+h2 { margin-top:30px; }
+</style>
+</head>
+<body>
+<h1>Mark Six — Pyramid Groups (difference = 3–4 numbers, connected clusters)</h1>
+
+
+<input type="text" id="searchNumbers" placeholder="Enter numbers separated by comma, e.g. 6,19">
+<button id="searchBtn">Search</button>
+<div id="searchResult"></div>
+
+<input type="file" id="csvFile" accept=".csv">
+<div id="output"></div>
+
+<script>
+
+let pyramidGroups = [];
+
+document.getElementById('searchBtn').addEventListener('click', ()=>{
+    const input = document.getElementById('searchNumbers').value;
+    const searchNums = input.split(',').map(n=>parseInt(n.trim(),10)).filter(n=>!isNaN(n));
+    if(searchNums.length === 0) return;
+
+    const resultDiv = document.getElementById('searchResult');
+    resultDiv.innerHTML = '';
+
+    const matchingGroups = pyramidGroups.filter(group=>{
+        return group.some(draw=>{
+            return searchNums.every(num => draw.numbers.includes(num));
+        });
+    });
+
+    if(matchingGroups.length === 0){
+        resultDiv.textContent = `No groups contain numbers: ${searchNums.join(', ')}`;
+        return;
+    }
+
+    matchingGroups.forEach((group,index)=>{
+        const h = document.createElement('h4');
+        h.textContent = `Pyramid Group ${index+1}`;
+        resultDiv.appendChild(h);
+
+        const table = document.createElement('table');
+        const header = document.createElement('tr');
+        header.innerHTML = '<th>Date</th><th>Numbers</th>';
+        table.appendChild(header);
+
+        group.forEach(d=>{
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${d.date}</td><td>${d.numbers.join(', ')}</td>`;
+            table.appendChild(tr);
+        });
+
+        resultDiv.appendChild(table);
+    });
+});
+
+document.getElementById('csvFile').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(event){
+        processCSV(event.target.result);
+    };
+    reader.readAsText(file);
+});
+
+// symmetric difference
+function countDifferences(arr1, arr2){
+    const set1 = new Set(arr1);
+    const set2 = new Set(arr2);
+    let diff = 0;
+    set1.forEach(n => { if(!set2.has(n)) diff++; });
+    set2.forEach(n => { if(!set1.has(n)) diff++; });
+    return diff;
+}
+
+// DFS to find connected components
+function dfs(nodeIndex, graph, visited, component){
+    visited[nodeIndex] = true;
+    component.push(nodeIndex);
+    graph[nodeIndex].forEach(neighbor => {
+        if(!visited[neighbor]){
+            dfs(neighbor, graph, visited, component);
+        }
+    });
+}
+
+function processCSV(csvText){
+    const rows = csvText.trim().split(/\r?\n/).map(r=>r.split(','));
+    const dataRows = rows.slice(1).map(r=>{
+        const nums = r.slice(2,9).map(n=>parseInt(n,10));
+        return {date:r[1], numbers:nums};
+    });
+
+    const minDiff = 3;
+    const maxDiff = 4;
+
+    // Build graph
+    const graph = Array.from({length: dataRows.length}, ()=>[]);
+    for(let i=0;i<dataRows.length;i++){
+        for(let j=i+1;j<dataRows.length;j++){
+            const diff = countDifferences(dataRows[i].numbers, dataRows[j].numbers);
+            if(diff >= minDiff && diff <= maxDiff){
+                graph[i].push(j);
+                graph[j].push(i);
+            }
+        }
+    }
+
+    // Find connected components
+    const visited = Array(dataRows.length).fill(false);
+    pyramidGroups = [];
+
+    for(let i=0;i<dataRows.length;i++){
+        if(!visited[i]){
+            const component = [];
+            dfs(i, graph, visited, component);
+            if(component.length >= 2){
+                // Store the actual draws
+                const groupDraws = component.map(idx => dataRows[idx]);
+                pyramidGroups.push(groupDraws);
+            }
+        }
+    }
+
+    displayPyramidGroups(pyramidGroups);
+}
+
+function displayPyramidGroups(groups){
+    const output = document.getElementById('output');
+    output.innerHTML = '';
+
+    if(groups.length === 0){
+        output.textContent = 'No pyramid groups found.';
+        return;
+    }
+
+    groups.forEach((group,index)=>{
+        const h = document.createElement('h2');
+        h.textContent = `Pyramid Group ${index+1}`;
+        output.appendChild(h);
+
+        const table = document.createElement('table');
+        const header = document.createElement('tr');
+        header.innerHTML = '<th>Date</th><th>Numbers</th>';
+        table.appendChild(header);
+
+        group.forEach(d=>{
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${d.date}</td><td>${d.numbers.join(', ')}</td>`;
+            table.appendChild(tr);
+        });
+
+        output.appendChild(table);
+    });
+}
+</script>
+</body>
+</html>
