@@ -1,6 +1,6 @@
 # MarkSixWinningSecondMethodPastMethod
 Mark Six Base number method is designed and invented by Ho Yeung, Lee with Excel start from 2018, between 2021 and 2022. Surname is Lee, First Name is Ho Yeung. Copyright is reserved.
-Mark Six Pyramid method and html is designed and invented Ho Yeung, Lee with Chatgpt tool.
+Mark Six Pyramid method and html is designed and invented by Ho Yeung, Lee with Chatgpt tool.
 
 Bank number is at Base 4 of date difference when input YYYY-MM-DD and when only base 11 and base 12 are integers instead of HEX
 
