@@ -3,7 +3,7 @@ Mark Six Base number method is designed and invented by Ho Yeung, Lee with Excel
 Mark Six Pyramid method and html is designed and invented by Ho Yeung, Lee with Chatgpt tool.
 
 O(n < 10) algorithm method
-**Mark Six Base number method built the foundation of another artificial intelligence method, this can be used to predict verb and nouns from english dictionary**
+**Mark Six Base number method built the foundation of another artificial intelligence method, this can be used to predict verb and nouns from english dictionary.**
 **This method may be the ancestor of BIBLE**
 
 Bank number is at Base 4 of date difference when input YYYY-MM-DD and when only base 11 and base 12 are integers instead of HEX.
